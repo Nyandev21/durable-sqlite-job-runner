@@ -56,6 +56,10 @@ Application logs are newline-delimited JSON. HTTP responses echo `X-Request-Id`
 (or generate one when absent), and job lifecycle events include both the job ID
 and worker ID so a request can be correlated with its background execution.
 
+Jobs that exhaust their attempt budget remain persisted with status `failed`.
+Operators can inspect the newest terminal jobs with `GET /dead-letter?limit=50`;
+the limit is validated between 1 and 100.
+
 ## Configuration
 
 Copy `.env.example` values into your runtime environment as needed:

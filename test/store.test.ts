@@ -62,5 +62,23 @@ describe("JobStore", () => {
     expect(second?.attempts).toBe(2);
     store.fail(created.id, "worker-a", "second failure", 50, created.createdAt + 50);
     expect(store.get(created.id)).toMatchObject({ status: "failed", lastError: "second failure" });
+    expect(store.listFailed()).toEqual([
+      expect.objectContaining({ id: created.id, status: "failed", lastError: "second failure" }),
+    ]);
+  });
+
+  it("lists only terminal jobs with a bounded result", () => {
+    const store = createStore();
+    const first = store.enqueue("unknown", { order: 1 }, { maxAttempts: 1 });
+    const second = store.enqueue("unknown", { order: 2 }, { maxAttempts: 1 });
+    store.enqueue("uppercase", { text: "still queued" });
+    store.claim("worker-a", 100, first.createdAt);
+    store.fail(first.id, "worker-a", "failed first", 0, first.createdAt + 1);
+    store.claim("worker-a", 100, second.createdAt + 2);
+    store.fail(second.id, "worker-a", "failed second", 0, second.createdAt + 3);
+
+    expect(store.listFailed(1)).toEqual([
+      expect.objectContaining({ id: second.id, lastError: "failed second" }),
+    ]);
   });
 });

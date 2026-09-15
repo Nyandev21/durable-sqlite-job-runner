@@ -119,6 +119,16 @@ export class JobStore {
     return row === undefined ? null : deserialize(row);
   }
 
+  listFailed(limit = 50): Job[] {
+    const rows = this.#database.prepare(`
+      SELECT * FROM jobs
+      WHERE status = 'failed'
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT ?
+    `).all(limit) as unknown as JobRow[];
+    return rows.map(deserialize);
+  }
+
   isReady(): boolean {
     try {
       const row = this.#database.prepare(`
