@@ -6,6 +6,7 @@ export interface WorkerOptions {
   leaseMs: number;
   pollIntervalMs: number;
   retryBaseDelayMs?: number;
+  retryMaxDelayMs?: number;
 }
 
 export class Worker {
@@ -22,7 +23,7 @@ export class Worker {
   ) {
     this.#store = store;
     this.#handlers = handlers;
-    this.#options = { retryBaseDelayMs: 250, ...options };
+    this.#options = { retryBaseDelayMs: 250, retryMaxDelayMs: 30_000, ...options };
   }
 
   async runOnce(): Promise<boolean> {
@@ -38,7 +39,10 @@ export class Worker {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const delay = this.#options.retryBaseDelayMs * 2 ** (job.attempts - 1);
+      const delay = Math.min(
+        this.#options.retryMaxDelayMs,
+        this.#options.retryBaseDelayMs * 2 ** (job.attempts - 1),
+      );
       this.#store.fail(job.id, this.#options.workerId, message, delay);
     }
     return true;

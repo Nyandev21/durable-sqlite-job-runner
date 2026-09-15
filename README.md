@@ -58,7 +58,12 @@ Copy `.env.example` values into your runtime environment as needed:
 | `DB_PATH` | `./data/jobs.db` | SQLite database location |
 | `POLL_INTERVAL_MS` | `250` | Delay while the queue is empty |
 | `LEASE_MS` | `30000` | Time before another worker may reclaim a job |
+| `RETRY_BASE_DELAY_MS` | `250` | Initial exponential retry delay |
+| `RETRY_MAX_DELAY_MS` | `30000` | Upper bound for retry delays |
 | `WORKER_ID` | `worker-1` | Stable identifier for this worker process |
+
+Startup validates all values and reports invalid environment keys together. The
+retry maximum must be greater than or equal to the base delay.
 
 ## Verification
 
