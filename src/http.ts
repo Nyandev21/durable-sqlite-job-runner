@@ -10,6 +10,10 @@ const enqueueRequest = z.object({
   maxAttempts: z.number().int().min(1).max(20).optional(),
 });
 
+const deadLetterQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -70,6 +74,13 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
         );
         logger.info("job.enqueued", { requestId: correlationId, jobId: job.id, kind: job.kind });
         json(response, 202, job);
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/dead-letter") {
+        const query = deadLetterQuery.parse(Object.fromEntries(url.searchParams));
+        const jobs = store.listFailed(query.limit);
+        json(response, 200, { count: jobs.length, jobs });
         return;
       }
 

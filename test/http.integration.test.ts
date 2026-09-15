@@ -81,4 +81,26 @@ describe("HTTP job flow", () => {
       context: expect.objectContaining({ requestId: "request-test-1", jobId: created.id }),
     }));
   });
+
+  it("exposes terminal jobs through a bounded dead-letter endpoint", async () => {
+    const store = new JobStore(":memory:");
+    const failed = store.enqueue("unknown", {}, { maxAttempts: 1 });
+    store.claim("worker-test", 1_000, failed.createdAt);
+    store.fail(failed.id, "worker-test", "No handler", 0, failed.createdAt + 1);
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => {
+      server.close();
+      store.close();
+    });
+    const port = (server.address() as AddressInfo).port;
+
+    const response = await fetch(`http://127.0.0.1:${port}/dead-letter?limit=10`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      count: 1,
+      jobs: [{ id: failed.id, status: "failed", lastError: "No handler" }],
+    });
+    expect((await fetch(`http://127.0.0.1:${port}/dead-letter?limit=1000`)).status).toBe(400);
+  });
 });
