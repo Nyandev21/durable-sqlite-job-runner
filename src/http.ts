@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
+import { consoleLogger, type Logger } from "./logger.js";
 import type { JobStore } from "./store.js";
 
 const enqueueRequest = z.object({
@@ -25,8 +27,27 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
-export function createHttpServer(store: JobStore): Server {
+function requestId(request: IncomingMessage): string {
+  const supplied = request.headers["x-request-id"];
+  return typeof supplied === "string" && supplied.length > 0 && supplied.length <= 128
+    ? supplied
+    : randomUUID();
+}
+
+export function createHttpServer(store: JobStore, logger: Logger = consoleLogger): Server {
   return createServer(async (request, response) => {
+    const correlationId = requestId(request);
+    const startedAt = performance.now();
+    response.setHeader("x-request-id", correlationId);
+    response.once("finish", () => {
+      logger.info("http.request.completed", {
+        requestId: correlationId,
+        method: request.method,
+        path: request.url,
+        statusCode: response.statusCode,
+        durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      });
+    });
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
       if (request.method === "GET" && url.pathname === "/health") {
@@ -47,6 +68,7 @@ export function createHttpServer(store: JobStore): Server {
           input.payload,
           input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts },
         );
+        logger.info("job.enqueued", { requestId: correlationId, jobId: job.id, kind: job.kind });
         json(response, 202, job);
         return;
       }
@@ -65,6 +87,7 @@ export function createHttpServer(store: JobStore): Server {
         return;
       }
       const message = error instanceof Error ? error.message : "Unknown error";
+      logger.error("http.request.rejected", error, { requestId: correlationId });
       json(response, 400, { error: message });
     }
   });
