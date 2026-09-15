@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { handlers } from "../src/handlers.js";
 import { createHttpServer } from "../src/http.js";
+import { silentLogger, type LogContext, type Logger } from "../src/logger.js";
 import { JobStore } from "../src/store.js";
 import { Worker } from "../src/worker.js";
 
@@ -14,7 +15,7 @@ afterEach(() => {
 describe("HTTP job flow", () => {
   it("separates process liveness from SQLite readiness", async () => {
     const store = new JobStore(":memory:");
-    const server = createHttpServer(store);
+    const server = createHttpServer(store, silentLogger);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(() => server.close());
     const port = (server.address() as AddressInfo).port;
@@ -36,7 +37,12 @@ describe("HTTP job flow", () => {
 
   it("accepts, processes, and returns a persisted job", async () => {
     const store = new JobStore(":memory:");
-    const server = createHttpServer(store);
+    const events: Array<{ event: string; context?: LogContext }> = [];
+    const logger: Logger = {
+      info(event, context) { events.push({ event, ...(context === undefined ? {} : { context }) }); },
+      error() {},
+    };
+    const server = createHttpServer(store, logger);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(() => {
       server.close();
@@ -47,10 +53,12 @@ describe("HTTP job flow", () => {
 
     const accepted = await fetch(`${baseUrl}/jobs`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // A caller-supplied ID is echoed and included in structured logs.
+      headers: { "content-type": "application/json", "x-request-id": "request-test-1" },
       body: JSON.stringify({ kind: "checksum", payload: { value: "abc" } }),
     });
     expect(accepted.status).toBe(202);
+    expect(accepted.headers.get("x-request-id")).toBe("request-test-1");
     const created = (await accepted.json()) as { id: string };
 
     const worker = new Worker(store, handlers, {
@@ -68,5 +76,9 @@ describe("HTTP job flow", () => {
       attempts: 1,
       result: { sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" },
     });
+    expect(events).toContainEqual(expect.objectContaining({
+      event: "job.enqueued",
+      context: expect.objectContaining({ requestId: "request-test-1", jobId: created.id }),
+    }));
   });
 });

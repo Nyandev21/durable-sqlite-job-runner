@@ -52,6 +52,10 @@ Operational probes are available at `GET /health` for process liveness and
 `GET /ready` for SQLite schema/connection readiness. Readiness returns HTTP 503
 when the queue database cannot be queried.
 
+Application logs are newline-delimited JSON. HTTP responses echo `X-Request-Id`
+(or generate one when absent), and job lifecycle events include both the job ID
+and worker ID so a request can be correlated with its background execution.
+
 ## Configuration
 
 Copy `.env.example` values into your runtime environment as needed:
