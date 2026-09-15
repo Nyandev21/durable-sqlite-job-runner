@@ -60,6 +60,10 @@ Jobs that exhaust their attempt budget remain persisted with status `failed`.
 Operators can inspect the newest terminal jobs with `GET /dead-letter?limit=50`;
 the limit is validated between 1 and 100.
 
+`POST /jobs/:id/retry` requeues a terminal job, clears its recorded error, and
+resets its attempt budget. The endpoint returns 409 for jobs that are not failed
+and 404 for unknown IDs.
+
 ## Configuration
 
 Copy `.env.example` values into your runtime environment as needed:

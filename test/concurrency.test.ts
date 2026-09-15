@@ -63,7 +63,7 @@ describe("multi-process claims", () => {
         finalStore.close();
       }
     } finally {
-      rmSync(directory, { recursive: true, force: true });
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   });
 });
