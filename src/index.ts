@@ -10,6 +10,8 @@ const worker = new Worker(store, handlers, {
   workerId: config.WORKER_ID,
   leaseMs: config.LEASE_MS,
   pollIntervalMs: config.POLL_INTERVAL_MS,
+  retryBaseDelayMs: config.RETRY_BASE_DELAY_MS,
+  retryMaxDelayMs: config.RETRY_MAX_DELAY_MS,
 });
 const server = createHttpServer(store);
 
