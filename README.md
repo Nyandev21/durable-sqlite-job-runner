@@ -45,6 +45,10 @@ npm install
 npm run dev
 ```
 
+`GET /stats` returns status counts, total attempts, and the amount of work that
+is immediately claimable. It is intended as a lightweight operational snapshot;
+production monitoring can scrape or adapt this endpoint.
+
 Enqueue and inspect a job:
 
 ```bash

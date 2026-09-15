@@ -114,4 +114,28 @@ describe("HTTP job flow", () => {
     expect((await fetch(`http://127.0.0.1:${port}/jobs/${failed.id}/retry`, { method: "POST" })).status).toBe(409);
     expect((await fetch(`http://127.0.0.1:${port}/jobs/missing/retry`, { method: "POST" })).status).toBe(404);
   });
+
+  it("exposes an operational queue snapshot", async () => {
+    const store = new JobStore(":memory:");
+    store.enqueue("uppercase", { text: "observe" });
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => {
+      server.close();
+      store.close();
+    });
+    const port = (server.address() as AddressInfo).port;
+
+    const response = await fetch(`http://127.0.0.1:${port}/stats`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      total: 1,
+      queued: 1,
+      running: 0,
+      succeeded: 0,
+      failed: 0,
+      claimable: 1,
+      totalAttempts: 0,
+    });
+  });
 });
