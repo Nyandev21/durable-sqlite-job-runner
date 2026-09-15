@@ -21,4 +21,14 @@ export interface EnqueueOptions {
   availableAt?: number;
 }
 
+export interface QueueStats {
+  total: number;
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  claimable: number;
+  totalAttempts: number;
+}
+
 export type JobHandler = (payload: unknown) => unknown | Promise<unknown>;

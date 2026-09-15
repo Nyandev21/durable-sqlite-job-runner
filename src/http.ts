@@ -65,6 +65,11 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/stats") {
+        json(response, 200, store.stats());
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/jobs") {
         const input = enqueueRequest.parse(await readJson(request));
         const job = store.enqueue(

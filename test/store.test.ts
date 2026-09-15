@@ -21,6 +21,27 @@ afterEach(() => {
 });
 
 describe("JobStore", () => {
+  it("reports queue state and currently claimable work", () => {
+    const store = createStore();
+    const now = Date.now();
+    const ready = store.enqueue("uppercase", { text: "ready" }, { availableAt: now });
+    store.enqueue("uppercase", { text: "later" }, { availableAt: now + 10_000 });
+    store.claim("worker-a", 100, now);
+
+    expect(store.stats(now + 50)).toEqual({
+      total: 2,
+      queued: 1,
+      running: 1,
+      succeeded: 0,
+      failed: 0,
+      claimable: 0,
+      totalAttempts: 1,
+    });
+    expect(store.stats(now + 101)).toMatchObject({ claimable: 1 });
+    expect(store.complete(ready.id, "worker-a", null, now + 102)).toBe(true);
+    expect(store.stats(now + 102)).toMatchObject({ succeeded: 1, running: 0 });
+  });
+
   it("rejects a payload that JSON cannot represent", () => {
     const store = createStore();
     expect(() => store.enqueue("invalid", undefined)).toThrow("JSON-serializable");

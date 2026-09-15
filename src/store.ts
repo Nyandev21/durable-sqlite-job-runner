@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
 import { migrateDatabase } from "./migrations.js";
-import type { EnqueueOptions, Job } from "./types.js";
+import type { EnqueueOptions, Job, QueueStats } from "./types.js";
 
 interface JobRow {
   id: string;
@@ -140,6 +140,25 @@ export class JobStore {
     } catch {
       return false;
     }
+  }
+
+  stats(now = Date.now()): QueueStats {
+    return this.#database.prepare(`
+      SELECT
+        count(*) AS total,
+        count(*) FILTER (WHERE status = 'queued') AS queued,
+        count(*) FILTER (WHERE status = 'running') AS running,
+        count(*) FILTER (WHERE status = 'succeeded') AS succeeded,
+        count(*) FILTER (WHERE status = 'failed') AS failed,
+        count(*) FILTER (WHERE
+          attempts < max_attempts AND (
+            (status = 'queued' AND available_at <= ?)
+            OR (status = 'running' AND lease_expires_at <= ?)
+          )
+        ) AS claimable,
+        coalesce(sum(attempts), 0) AS totalAttempts
+      FROM jobs
+    `).get(now, now) as unknown as QueueStats;
   }
 
   claim(workerId: string, leaseMs: number, now = Date.now()): Job | null {
