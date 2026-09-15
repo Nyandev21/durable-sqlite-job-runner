@@ -29,6 +29,13 @@ This is intentionally not a distributed queue. SQLite database files must remain
 on local storage; multi-host workloads should use a broker or database designed
 for distributed coordination.
 
+## Schema upgrades
+
+The service applies ordered SQLite migrations at startup inside an immediate
+transaction and records the current revision in `PRAGMA user_version`. Existing
+unversioned databases are upgraded in place. Startup fails rather than opening a
+database written by a newer, incompatible service version.
+
 ## Run locally
 
 Requires Node.js 24 or newer (the project uses the built-in `node:sqlite` API).

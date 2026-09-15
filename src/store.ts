@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
+import { migrateDatabase } from "./migrations.js";
 import type { EnqueueOptions, Job } from "./types.js";
 
 interface JobRow {
@@ -50,24 +51,13 @@ export class JobStore {
       PRAGMA journal_mode = WAL;
       PRAGMA busy_timeout = 5000;
       PRAGMA foreign_keys = ON;
-      CREATE TABLE IF NOT EXISTS jobs (
-        id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
-        attempts INTEGER NOT NULL DEFAULT 0,
-        max_attempts INTEGER NOT NULL CHECK (max_attempts > 0),
-        available_at INTEGER NOT NULL,
-        lease_expires_at INTEGER,
-        worker_id TEXT,
-        result TEXT,
-        last_error TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS jobs_claimable
-        ON jobs(status, available_at, lease_expires_at, created_at);
     `);
+    try {
+      migrateDatabase(this.#database);
+    } catch (error) {
+      this.#database.close();
+      throw error;
+    }
   }
 
   enqueue(kind: string, payload: unknown, options: EnqueueOptions = {}): Job {
