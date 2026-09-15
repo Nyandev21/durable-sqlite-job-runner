@@ -16,6 +16,7 @@ export class Worker {
   readonly #options: Required<WorkerOptions>;
   readonly #logger: Logger;
   #timer: NodeJS.Timeout | null = null;
+  #currentRun: Promise<void> | null = null;
   #stopped = true;
 
   constructor(
@@ -67,22 +68,34 @@ export class Worker {
   start(): void {
     if (!this.#stopped) return;
     this.#stopped = false;
-    const tick = async (): Promise<void> => {
-      if (this.#stopped) return;
-      try {
-        const worked = await this.runOnce();
-        this.#timer = setTimeout(tick, worked ? 0 : this.#options.pollIntervalMs);
-      } catch (error) {
-        this.#logger.error("worker.loop.error", error, { workerId: this.#options.workerId });
-        this.#timer = setTimeout(tick, this.#options.pollIntervalMs);
-      }
-    };
-    void tick();
+    this.#schedule(0);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.#stopped = true;
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;
+    await this.#currentRun;
+  }
+
+  #schedule(delayMs: number): void {
+    this.#timer = setTimeout(() => void this.#tick(), delayMs);
+  }
+
+  async #tick(): Promise<void> {
+    if (this.#stopped) return;
+    let worked = false;
+    const run = this.runOnce();
+    this.#currentRun = run.then((result) => {
+      worked = result;
+    });
+    try {
+      await this.#currentRun;
+    } catch (error) {
+      this.#logger.error("worker.loop.error", error, { workerId: this.#options.workerId });
+    } finally {
+      this.#currentRun = null;
+    }
+    if (!this.#stopped) this.#schedule(worked ? 0 : this.#options.pollIntervalMs);
   }
 }
