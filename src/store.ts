@@ -129,6 +129,17 @@ export class JobStore {
     return rows.map(deserialize);
   }
 
+  requeueFailed(id: string, now = Date.now()): Job | null {
+    const updated = this.#database.prepare(`
+      UPDATE jobs
+      SET status = 'queued', attempts = 0, available_at = ?,
+          worker_id = NULL, lease_expires_at = NULL, result = NULL,
+          last_error = NULL, updated_at = ?
+      WHERE id = ? AND status = 'failed'
+    `).run(now, now, id);
+    return this.#changed(updated) ? this.get(id) : null;
+  }
+
   isReady(): boolean {
     try {
       const row = this.#database.prepare(`

@@ -102,5 +102,16 @@ describe("HTTP job flow", () => {
       jobs: [{ id: failed.id, status: "failed", lastError: "No handler" }],
     });
     expect((await fetch(`http://127.0.0.1:${port}/dead-letter?limit=1000`)).status).toBe(400);
+
+    const retried = await fetch(`http://127.0.0.1:${port}/jobs/${failed.id}/retry`, { method: "POST" });
+    expect(retried.status).toBe(202);
+    await expect(retried.json()).resolves.toMatchObject({
+      id: failed.id,
+      status: "queued",
+      attempts: 0,
+      lastError: null,
+    });
+    expect((await fetch(`http://127.0.0.1:${port}/jobs/${failed.id}/retry`, { method: "POST" })).status).toBe(409);
+    expect((await fetch(`http://127.0.0.1:${port}/jobs/missing/retry`, { method: "POST" })).status).toBe(404);
   });
 });

@@ -91,6 +91,24 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
         return;
       }
 
+      const retryMatch = /^\/jobs\/([^/]+)\/retry$/.exec(url.pathname);
+      if (request.method === "POST" && retryMatch?.[1] !== undefined) {
+        const id = decodeURIComponent(retryMatch[1]);
+        const existing = store.get(id);
+        if (existing === null) {
+          json(response, 404, { error: "Job not found" });
+          return;
+        }
+        if (existing.status !== "failed") {
+          json(response, 409, { error: `Only failed jobs can be retried; current status is ${existing.status}` });
+          return;
+        }
+        const job = store.requeueFailed(id);
+        logger.info("job.requeued", { requestId: correlationId, jobId: id });
+        json(response, 202, job);
+        return;
+      }
+
       json(response, 404, { error: "Not found" });
     } catch (error) {
       if (error instanceof z.ZodError) {

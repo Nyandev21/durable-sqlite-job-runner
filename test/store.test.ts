@@ -81,4 +81,22 @@ describe("JobStore", () => {
       expect.objectContaining({ id: second.id, lastError: "failed second" }),
     ]);
   });
+
+  it("requeues only terminal jobs with a fresh attempt budget", () => {
+    const store = createStore();
+    const failed = store.enqueue("uppercase", { text: "retry" }, { maxAttempts: 1 });
+    const queued = store.enqueue("uppercase", { text: "queued" });
+    store.claim("worker-a", 100, failed.createdAt);
+    store.fail(failed.id, "worker-a", "temporary failure", 0, failed.createdAt + 1);
+
+    expect(store.requeueFailed(failed.id, failed.createdAt + 10)).toMatchObject({
+      id: failed.id,
+      status: "queued",
+      attempts: 0,
+      availableAt: failed.createdAt + 10,
+      lastError: null,
+    });
+    expect(store.requeueFailed(queued.id)).toBeNull();
+    expect(store.requeueFailed("missing")).toBeNull();
+  });
 });
