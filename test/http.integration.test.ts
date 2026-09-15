@@ -12,6 +12,28 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("separates process liveness from SQLite readiness", async () => {
+    const store = new JobStore(":memory:");
+    const server = createHttpServer(store);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => server.close());
+    const port = (server.address() as AddressInfo).port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    await expect(fetch(`${baseUrl}/health`).then((response) => response.json())).resolves.toEqual({
+      status: "ok",
+    });
+    const ready = await fetch(`${baseUrl}/ready`);
+    expect(ready.status).toBe(200);
+    await expect(ready.json()).resolves.toEqual({ status: "ready" });
+
+    store.close();
+    const unavailable = await fetch(`${baseUrl}/ready`);
+    expect(unavailable.status).toBe(503);
+    await expect(unavailable.json()).resolves.toEqual({ status: "not_ready" });
+    expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+  });
+
   it("accepts, processes, and returns a persisted job", async () => {
     const store = new JobStore(":memory:");
     const server = createHttpServer(store);

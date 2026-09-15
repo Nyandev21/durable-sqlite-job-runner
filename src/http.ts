@@ -34,6 +34,12 @@ export function createHttpServer(store: JobStore): Server {
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/ready") {
+        const ready = store.isReady();
+        json(response, ready ? 200 : 503, { status: ready ? "ready" : "not_ready" });
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/jobs") {
         const input = enqueueRequest.parse(await readJson(request));
         const job = store.enqueue(

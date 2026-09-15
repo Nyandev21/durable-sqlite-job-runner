@@ -48,6 +48,10 @@ curl -s http://localhost:3000/jobs/JOB_ID
 Built-in handlers are `uppercase` and `checksum`. The HTTP API accepts at most a
 1 MB JSON request body.
 
+Operational probes are available at `GET /health` for process liveness and
+`GET /ready` for SQLite schema/connection readiness. Readiness returns HTTP 503
+when the queue database cannot be queried.
+
 ## Configuration
 
 Copy `.env.example` values into your runtime environment as needed:
