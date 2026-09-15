@@ -1,0 +1,13 @@
+services:
+  runner:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DB_PATH: /app/data/jobs.db
+      WORKER_ID: compose-worker
+    volumes:
+      - job-data:/app/data
+
+volumes:
+  job-data:
