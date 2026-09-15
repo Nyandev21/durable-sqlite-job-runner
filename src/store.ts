@@ -119,6 +119,18 @@ export class JobStore {
     return row === undefined ? null : deserialize(row);
   }
 
+  isReady(): boolean {
+    try {
+      const row = this.#database.prepare(`
+        SELECT count(*) AS count FROM sqlite_schema
+        WHERE type = 'table' AND name = 'jobs'
+      `).get() as { count: number };
+      return row.count === 1;
+    } catch {
+      return false;
+    }
+  }
+
   claim(workerId: string, leaseMs: number, now = Date.now()): Job | null {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
