@@ -49,6 +49,9 @@ npm run dev
 is immediately claimable. It is intended as a lightweight operational snapshot;
 production monitoring can scrape or adapt this endpoint.
 
+See [the recovery runbook](docs/recovery.md) for crash recovery, dead-letter
+handling, SQLite backup constraints, and the multi-process contention check.
+
 Enqueue and inspect a job:
 
 ```bash
