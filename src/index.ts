@@ -22,13 +22,17 @@ server.listen(config.PORT, "0.0.0.0", () => {
   worker.start();
 });
 
-function shutdown(): void {
-  worker.stop();
-  server.close(() => {
-    store.close();
-    process.exitCode = 0;
+let shuttingDown = false;
+async function shutdown(): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error === undefined ? resolve() : reject(error));
   });
+  await worker.stop();
+  store.close();
+  process.exitCode = 0;
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());

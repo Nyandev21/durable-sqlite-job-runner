@@ -21,6 +21,9 @@ whose handlers are safe to run more than once.
 - Delivery is **at least once**. Handlers must be idempotent because a process can
   perform an external side effect and crash before recording completion.
 - After `maxAttempts`, the job is retained with status `failed` for inspection.
+- On shutdown, the HTTP listener closes first, the worker stops claiming jobs,
+  and any active handler is allowed to persist its final state before SQLite is
+  closed.
 
 This is intentionally not a distributed queue. SQLite database files must remain
 on local storage; multi-host workloads should use a broker or database designed
