@@ -14,16 +14,26 @@ const deadLetterQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+class ClientRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     size += buffer.length;
-    if (size > 1_000_000) throw new Error("Request body exceeds 1 MB");
+    if (size > 1_000_000) throw new ClientRequestError(413, "Request body exceeds 1 MB");
     chunks.push(buffer);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } catch {
+    throw new ClientRequestError(400, "Invalid JSON body");
+  }
 }
 
 function json(response: ServerResponse, status: number, body: unknown): void {
@@ -120,9 +130,12 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
         json(response, 400, { error: "Invalid request", issues: error.issues });
         return;
       }
-      const message = error instanceof Error ? error.message : "Unknown error";
       logger.error("http.request.rejected", error, { requestId: correlationId });
-      json(response, 400, { error: message });
+      if (error instanceof ClientRequestError) {
+        json(response, error.status, { error: error.message });
+      } else {
+        json(response, 500, { error: "Internal server error" });
+      }
     }
   });
 }

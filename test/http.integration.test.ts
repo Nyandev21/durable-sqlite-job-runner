@@ -13,6 +13,28 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("distinguishes malformed input from internal storage failures", async () => {
+    const store = new JobStore(":memory:");
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => server.close());
+    const port = (server.address() as AddressInfo).port;
+    const url = `http://127.0.0.1:${port}/jobs`;
+
+    const invalid = await fetch(url, { method: "POST", body: "{not-json" });
+    expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({ error: "Invalid JSON body" });
+
+    const oversized = await fetch(url, { method: "POST", body: " ".repeat(1_000_001) });
+    expect(oversized.status).toBe(413);
+    await expect(oversized.json()).resolves.toEqual({ error: "Request body exceeds 1 MB" });
+
+    store.close();
+    const unavailable = await fetch(`http://127.0.0.1:${port}/stats`);
+    expect(unavailable.status).toBe(500);
+    await expect(unavailable.json()).resolves.toEqual({ error: "Internal server error" });
+  });
+
   it("separates process liveness from SQLite readiness", async () => {
     const store = new JobStore(":memory:");
     const server = createHttpServer(store, silentLogger);
