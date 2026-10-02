@@ -42,8 +42,23 @@ export class Worker {
     });
 
     const handler = this.#handlers[job.kind];
+    let renewal: NodeJS.Timeout | null = null;
     try {
       if (handler === undefined) throw new Error(`No handler registered for job kind: ${job.kind}`);
+      renewal = setInterval(() => {
+        try {
+          if (!this.#store.heartbeat(job.id, this.#options.workerId, job.leaseToken, this.#options.leaseMs)) {
+            if (renewal !== null) clearInterval(renewal);
+            renewal = null;
+            this.#logger.error("job.ownership_lost", new Error("Lease renewal was rejected"), {
+              jobId: job.id, workerId: this.#options.workerId,
+            });
+          }
+        } catch (error) {
+          this.#logger.error("job.heartbeat_error", error, { jobId: job.id, workerId: this.#options.workerId });
+        }
+      }, Math.max(1, Math.floor(this.#options.leaseMs / 3)));
+      renewal.unref();
       const result = await handler(job.payload);
       if (!this.#store.complete(job.id, this.#options.workerId, job.leaseToken, result)) {
         this.#logger.error("job.ownership_lost", new Error("Lease was replaced"), {
@@ -64,6 +79,8 @@ export class Worker {
         workerId: this.#options.workerId,
         retryDelayMs: delay,
       });
+    } finally {
+      if (renewal !== null) clearInterval(renewal);
     }
     return true;
   }

@@ -19,6 +19,9 @@ whose handlers are safe to run more than once.
 - Each claim receives a private fencing token. Heartbeat, completion, and failure
   updates require that token, so a stale worker cannot overwrite a newer claim
   even if both processes use the same worker ID.
+- While a handler is running, the worker renews its lease every third of the
+  configured lease duration. An event-loop stall or process failure can still
+  expire the lease; handlers must remain safe to repeat.
 - Delivery is **at least once**. Handlers must be idempotent because a process can
   perform an external side effect and crash before recording completion.
 - After `maxAttempts`, the job is retained with status `failed` for inspection.
