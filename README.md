@@ -151,6 +151,9 @@ docker compose up --build
 ```
 
 The named volume persists `/app/data/jobs.db` across container replacement.
+The image includes a Docker healthcheck that probes `/ready` every 15 seconds;
+an unavailable SQLite database marks the container unhealthy. The probe uses
+Node.js from the image and respects `PORT`.
 
 ## License
 
