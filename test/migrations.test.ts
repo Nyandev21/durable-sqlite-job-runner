@@ -24,14 +24,21 @@ describe("database migrations", () => {
   it("upgrades a legacy unversioned database without losing jobs", () => {
     const path = databasePath();
     const legacy = new DatabaseSync(path);
-    migrateDatabase(legacy);
+    legacy.exec(`
+      CREATE TABLE jobs (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL CHECK (max_attempts > 0),
+        available_at INTEGER NOT NULL, lease_expires_at INTEGER, worker_id TEXT,
+        result TEXT, last_error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+    `);
     legacy.prepare(`
       INSERT INTO jobs (
         id, kind, payload, status, attempts, max_attempts, available_at,
         created_at, updated_at
       ) VALUES ('legacy-job', 'uppercase', '{}', 'queued', 0, 3, 0, 0, 0)
     `).run();
-    legacy.exec("PRAGMA user_version = 0");
     legacy.close();
 
     const store = new JobStore(path);

@@ -26,7 +26,7 @@ describe("JobStore", () => {
     const now = Date.now();
     const ready = store.enqueue("uppercase", { text: "ready" }, { availableAt: now });
     store.enqueue("uppercase", { text: "later" }, { availableAt: now + 10_000 });
-    store.claim("worker-a", 100, now);
+    const claimed = store.claim("worker-a", 100, now)!;
 
     expect(store.stats(now + 50)).toEqual({
       total: 2,
@@ -38,7 +38,7 @@ describe("JobStore", () => {
       totalAttempts: 1,
     });
     expect(store.stats(now + 101)).toMatchObject({ claimable: 1 });
-    expect(store.complete(ready.id, "worker-a", null, now + 102)).toBe(true);
+    expect(store.complete(ready.id, "worker-a", claimed.leaseToken, null, now + 102)).toBe(true);
     expect(store.stats(now + 102)).toMatchObject({ succeeded: 1, running: 0 });
   });
 
@@ -54,7 +54,7 @@ describe("JobStore", () => {
     const claimed = store.claim("worker-a", 1_000, created.createdAt);
     expect(claimed).toMatchObject({ id: created.id, status: "running", attempts: 1 });
     expect(store.claim("worker-b", 1_000, created.createdAt)).toBeNull();
-    expect(store.complete(created.id, "worker-a", { text: "DURABLE" })).toBe(true);
+    expect(store.complete(created.id, "worker-a", claimed!.leaseToken, { text: "DURABLE" })).toBe(true);
     expect(store.get(created.id)).toMatchObject({
       status: "succeeded",
       result: { text: "DURABLE" },
@@ -64,11 +64,25 @@ describe("JobStore", () => {
   it("reclaims a job after its lease expires", () => {
     const store = createStore();
     const created = store.enqueue("uppercase", { text: "recover" });
-    store.claim("worker-a", 100, created.createdAt);
+    const original = store.claim("worker-a", 100, created.createdAt)!;
 
     const reclaimed = store.claim("worker-b", 100, created.createdAt + 101);
     expect(reclaimed).toMatchObject({ id: created.id, workerId: "worker-b", attempts: 2 });
-    expect(store.complete(created.id, "worker-a", null)).toBe(false);
+    expect(store.complete(created.id, "worker-a", original.leaseToken, null)).toBe(false);
+  });
+
+  it("fences a stale claim even when the worker ID is reused", () => {
+    const store = createStore();
+    const created = store.enqueue("uppercase", { text: "fenced" });
+    const original = store.claim("worker-a", 100, created.createdAt)!;
+    const replacement = store.claim("worker-a", 100, created.createdAt + 101)!;
+
+    expect(replacement.leaseToken).not.toBe(original.leaseToken);
+    expect(store.heartbeat(created.id, "worker-a", original.leaseToken, 100)).toBe(false);
+    expect(store.fail(created.id, "worker-a", original.leaseToken, "stale", 0)).toBe(false);
+    expect(store.complete(created.id, "worker-a", original.leaseToken, { stale: true })).toBe(false);
+    expect(store.complete(created.id, "worker-a", replacement.leaseToken, { fresh: true })).toBe(true);
+    expect(store.get(created.id)).toMatchObject({ status: "succeeded", result: { fresh: true } });
   });
 
   it("retries with a delay then records a terminal failure", () => {
@@ -76,12 +90,12 @@ describe("JobStore", () => {
     const created = store.enqueue("unknown", {}, { maxAttempts: 2 });
     const first = store.claim("worker-a", 100, created.createdAt);
     expect(first).not.toBeNull();
-    store.fail(created.id, "worker-a", "first failure", 50, created.createdAt);
+    store.fail(created.id, "worker-a", first!.leaseToken, "first failure", 50, created.createdAt);
     expect(store.claim("worker-a", 100, created.createdAt + 49)).toBeNull();
 
     const second = store.claim("worker-a", 100, created.createdAt + 50);
     expect(second?.attempts).toBe(2);
-    store.fail(created.id, "worker-a", "second failure", 50, created.createdAt + 50);
+    store.fail(created.id, "worker-a", second!.leaseToken, "second failure", 50, created.createdAt + 50);
     expect(store.get(created.id)).toMatchObject({ status: "failed", lastError: "second failure" });
     expect(store.listFailed()).toEqual([
       expect.objectContaining({ id: created.id, status: "failed", lastError: "second failure" }),
@@ -93,10 +107,10 @@ describe("JobStore", () => {
     const first = store.enqueue("unknown", { order: 1 }, { maxAttempts: 1 });
     const second = store.enqueue("unknown", { order: 2 }, { maxAttempts: 1 });
     store.enqueue("uppercase", { text: "still queued" });
-    store.claim("worker-a", 100, first.createdAt);
-    store.fail(first.id, "worker-a", "failed first", 0, first.createdAt + 1);
-    store.claim("worker-a", 100, second.createdAt + 2);
-    store.fail(second.id, "worker-a", "failed second", 0, second.createdAt + 3);
+    const firstClaim = store.claim("worker-a", 100, first.createdAt)!;
+    store.fail(first.id, "worker-a", firstClaim.leaseToken, "failed first", 0, first.createdAt + 1);
+    const secondClaim = store.claim("worker-a", 100, second.createdAt + 2)!;
+    store.fail(second.id, "worker-a", secondClaim.leaseToken, "failed second", 0, second.createdAt + 3);
 
     expect(store.listFailed(1)).toEqual([
       expect.objectContaining({ id: second.id, lastError: "failed second" }),
@@ -107,8 +121,8 @@ describe("JobStore", () => {
     const store = createStore();
     const failed = store.enqueue("uppercase", { text: "retry" }, { maxAttempts: 1 });
     const queued = store.enqueue("uppercase", { text: "queued" });
-    store.claim("worker-a", 100, failed.createdAt);
-    store.fail(failed.id, "worker-a", "temporary failure", 0, failed.createdAt + 1);
+    const claim = store.claim("worker-a", 100, failed.createdAt)!;
+    store.fail(failed.id, "worker-a", claim.leaseToken, "temporary failure", 0, failed.createdAt + 1);
 
     expect(store.requeueFailed(failed.id, failed.createdAt + 10)).toMatchObject({
       id: failed.id,
