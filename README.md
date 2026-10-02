@@ -66,6 +66,12 @@ curl -s http://localhost:3000/jobs \
 curl -s http://localhost:3000/jobs/JOB_ID
 ```
 
+`GET /jobs?status=queued&limit=50&offset=0` lists jobs newest first. The
+optional status filter accepts `queued`, `running`, `succeeded`, or `failed`;
+`limit` is 1–100 and `offset` is 0–10000. The response contains `total` for
+the selected status and a `jobs` page. Offset pages are snapshots, not a stable
+cursor: concurrent inserts can shift subsequent pages.
+
 Built-in handlers are `uppercase` and `checksum`. The HTTP API accepts at most a
 1 MB JSON request body.
 

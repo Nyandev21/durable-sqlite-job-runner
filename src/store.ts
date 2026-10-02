@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
 import { migrateDatabase } from "./migrations.js";
-import type { ClaimedJob, EnqueueOptions, Job, QueueStats } from "./types.js";
+import type { ClaimedJob, EnqueueOptions, Job, JobStatus, QueueStats } from "./types.js";
 
 interface JobRow {
   id: string;
@@ -111,6 +111,19 @@ export class JobStore {
   get(id: string): Job | null {
     const row = this.#database.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as JobRow | undefined;
     return row === undefined ? null : deserialize(row);
+  }
+
+  list(options: { status?: JobStatus | undefined; limit: number; offset: number }): { total: number; jobs: Job[] } {
+    const where = options.status === undefined ? "" : "WHERE status = ?";
+    const filter = options.status === undefined ? [] : [options.status];
+    const total = this.#database.prepare(`SELECT count(*) AS count FROM jobs ${where}`)
+      .get(...filter) as { count: number };
+    const rows = this.#database.prepare(`
+      SELECT * FROM jobs ${where}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ? OFFSET ?
+    `).all(...filter, options.limit, options.offset) as unknown as JobRow[];
+    return { total: total.count, jobs: rows.map(deserialize) };
   }
 
   listFailed(limit = 50): Job[] {

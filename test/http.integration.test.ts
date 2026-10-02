@@ -13,6 +13,22 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("lists filtered job pages and validates pagination parameters", async () => {
+    const store = new JobStore(":memory:");
+    store.enqueue("uppercase", { order: 1 });
+    store.enqueue("uppercase", { order: 2 });
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => { server.close(); store.close(); });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/jobs`;
+
+    const page = await fetch(`${base}?status=queued&limit=1&offset=1`);
+    expect(page.status).toBe(200);
+    await expect(page.json()).resolves.toMatchObject({ total: 2, jobs: [expect.objectContaining({ status: "queued" })] });
+    expect((await fetch(`${base}?limit=101`)).status).toBe(400);
+    expect((await fetch(`${base}?status=invalid`)).status).toBe(400);
+  });
+
   it("accepts a scheduled run time without claiming the job early", async () => {
     const store = new JobStore(":memory:");
     const server = createHttpServer(store, silentLogger);
