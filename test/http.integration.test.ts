@@ -13,6 +13,23 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("protects job routes with an optional bearer token while leaving probes public", async () => {
+    const store = new JobStore(":memory:");
+    const token = "this-is-a-long-random-secret";
+    const server = createHttpServer(store, silentLogger, token);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => { server.close(); store.close(); });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    expect((await fetch(`${base}/health`)).status).toBe(200);
+    expect((await fetch(`${base}/ready`)).status).toBe(200);
+    const missing = await fetch(`${base}/jobs`);
+    expect(missing.status).toBe(401);
+    expect(missing.headers.get("www-authenticate")).toBe("Bearer");
+    expect((await fetch(`${base}/stats`, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
+    expect((await fetch(`${base}/stats`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
+  });
+
   it("returns the original job for a repeated idempotent enqueue", async () => {
     const store = new JobStore(":memory:");
     const server = createHttpServer(store, silentLogger);

@@ -10,6 +10,7 @@ const schema = z.object({
   RETRY_BASE_DELAY_MS: positiveInteger.default(250),
   RETRY_MAX_DELAY_MS: positiveInteger.default(30_000),
   WORKER_ID: z.string().trim().min(1).default("worker-1"),
+  API_TOKEN: z.string().min(16).optional(),
 }).superRefine((config, context) => {
   if (config.RETRY_MAX_DELAY_MS < config.RETRY_BASE_DELAY_MS) {
     context.addIssue({

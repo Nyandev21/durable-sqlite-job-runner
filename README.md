@@ -137,9 +137,17 @@ Copy `.env.example` values into your runtime environment as needed:
 | `RETRY_BASE_DELAY_MS` | `250` | Initial exponential retry delay |
 | `RETRY_MAX_DELAY_MS` | `30000` | Upper bound for retry delays |
 | `WORKER_ID` | `worker-1` | Stable identifier for this worker process |
+| `API_TOKEN` | unset | Optional bearer token for all routes except `/health` and `/ready` (minimum 16 characters) |
 
 Startup validates all values and reports invalid environment keys together. The
 retry maximum must be greater than or equal to the base delay.
+
+Without `API_TOKEN`, the HTTP API has no built-in authentication; bind it only
+to a trusted network. When exposed beyond that boundary, set a random secret
+and send `Authorization: Bearer YOUR_TOKEN` on job and stats requests. Keep the
+token out of URLs and logs, use HTTPS at the edge, and rotate it through your
+deployment's secret-management mechanism. Compose forwards `API_TOKEN` from
+the host environment when it is set.
 
 ## Verification
 

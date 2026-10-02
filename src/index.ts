@@ -13,7 +13,7 @@ const worker = new Worker(store, handlers, {
   retryBaseDelayMs: config.RETRY_BASE_DELAY_MS,
   retryMaxDelayMs: config.RETRY_MAX_DELAY_MS,
 });
-const server = createHttpServer(store);
+const server = createHttpServer(store, undefined, config.API_TOKEN);
 
 server.listen(config.PORT, "0.0.0.0", () => {
   const address = server.address();
