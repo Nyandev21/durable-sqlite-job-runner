@@ -65,6 +65,13 @@ curl -s http://localhost:3000/jobs/JOB_ID
 Built-in handlers are `uppercase` and `checksum`. The HTTP API accepts at most a
 1 MB JSON request body.
 
+To delay execution, include `runAt` as an ISO 8601 timestamp with a timezone
+(for example, `"2026-10-03T09:00:00Z"`) in `POST /jobs`. The response's
+`availableAt` is the corresponding Unix timestamp in milliseconds. Jobs with a
+future `runAt` remain queued until that time; omitted or past times are eligible
+immediately. Scheduling is best-effort: workers poll, so execution may start
+after the requested time rather than exactly on it.
+
 Operational probes are available at `GET /health` for process liveness and
 `GET /ready` for SQLite schema/connection readiness. Readiness returns HTTP 503
 when the queue database cannot be queried.

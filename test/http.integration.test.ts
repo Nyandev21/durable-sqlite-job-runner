@@ -13,6 +13,36 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("accepts a scheduled run time without claiming the job early", async () => {
+    const store = new JobStore(":memory:");
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => {
+      server.close();
+      store.close();
+    });
+    const port = (server.address() as AddressInfo).port;
+    const url = `http://127.0.0.1:${port}/jobs`;
+    const scheduledFor = Date.now() + 60_000;
+    const created = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "uppercase", payload: { text: "later" }, runAt: new Date(scheduledFor).toISOString() }),
+    });
+    expect(created.status).toBe(202);
+    const job = (await created.json()) as { id: string; availableAt: number };
+    expect(job.availableAt).toBe(scheduledFor);
+    expect(store.claim("early-worker", 1_000, scheduledFor - 1)).toBeNull();
+    expect(store.claim("scheduled-worker", 1_000, scheduledFor)?.id).toBe(job.id);
+
+    const invalid = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "uppercase", payload: {}, runAt: "next Tuesday" }),
+    });
+    expect(invalid.status).toBe(400);
+  });
+
   it("distinguishes malformed input from internal storage failures", async () => {
     const store = new JobStore(":memory:");
     const server = createHttpServer(store, silentLogger);
