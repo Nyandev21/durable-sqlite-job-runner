@@ -21,6 +21,22 @@ afterEach(() => {
 });
 
 describe("JobStore", () => {
+  it("lists a bounded, filtered page with a separate total", () => {
+    const store = createStore();
+    const first = store.enqueue("uppercase", { order: 1 });
+    const second = store.enqueue("uppercase", { order: 2 });
+    const third = store.enqueue("uppercase", { order: 3 }, { priority: 10 });
+    const claim = store.claim("worker", 1_000, third.createdAt)!;
+    store.complete(third.id, "worker", claim.leaseToken, null);
+
+    const page = store.list({ status: "queued", limit: 1, offset: 1 });
+    expect(page.total).toBe(2);
+    expect(page.jobs).toHaveLength(1);
+    expect([first.id, second.id]).toContain(page.jobs[0]?.id);
+    expect(store.list({ status: "succeeded", limit: 10, offset: 0 }).jobs[0]?.id).toBe(third.id);
+    expect(store.list({ limit: 10, offset: 0 }).total).toBe(3);
+  });
+
   it("claims ready jobs by priority without letting future jobs block the queue", () => {
     const store = createStore();
     const now = Date.now();

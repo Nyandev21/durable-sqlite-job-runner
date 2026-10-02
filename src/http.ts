@@ -16,6 +16,12 @@ const deadLetterQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+const listJobsQuery = z.object({
+  status: z.enum(["queued", "running", "succeeded", "failed"]).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(10_000).default(0),
+});
+
 class ClientRequestError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -79,6 +85,12 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
 
       if (request.method === "GET" && url.pathname === "/stats") {
         json(response, 200, store.stats());
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/jobs") {
+        const query = listJobsQuery.parse(Object.fromEntries(url.searchParams));
+        json(response, 200, store.list(query));
         return;
       }
 
