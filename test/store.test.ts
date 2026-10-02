@@ -21,6 +21,19 @@ afterEach(() => {
 });
 
 describe("JobStore", () => {
+  it("claims ready jobs by priority without letting future jobs block the queue", () => {
+    const store = createStore();
+    const now = Date.now();
+    const normal = store.enqueue("uppercase", { order: "normal" }, { availableAt: now, priority: 0 });
+    const urgent = store.enqueue("uppercase", { order: "urgent" }, { availableAt: now, priority: 5 });
+    const future = store.enqueue("uppercase", { order: "future" }, { availableAt: now + 1_000, priority: 10 });
+
+    expect(store.claim("worker", 100, now)?.id).toBe(urgent.id);
+    expect(store.claim("worker", 100, now)?.id).toBe(normal.id);
+    expect(store.claim("worker", 100, now)).toBeNull();
+    expect(store.claim("worker", 100, now + 1_000)?.id).toBe(future.id);
+  });
+
   it("reports queue state and currently claimable work", () => {
     const store = createStore();
     const now = Date.now();

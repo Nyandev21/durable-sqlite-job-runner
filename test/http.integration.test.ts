@@ -43,6 +43,24 @@ describe("HTTP job flow", () => {
     expect(invalid.status).toBe(400);
   });
 
+  it("accepts bounded priority and rejects out-of-range values", async () => {
+    const store = new JobStore(":memory:");
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => { server.close(); store.close(); });
+    const port = (server.address() as AddressInfo).port;
+    const url = `http://127.0.0.1:${port}/jobs`;
+    const post = (priority: number) => fetch(url, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "uppercase", payload: { text: "priority" }, priority }),
+    });
+    const accepted = await post(7);
+    expect(accepted.status).toBe(202);
+    await expect(accepted.json()).resolves.toMatchObject({ priority: 7 });
+    expect((await post(11)).status).toBe(400);
+  });
+
+
   it("distinguishes malformed input from internal storage failures", async () => {
     const store = new JobStore(":memory:");
     const server = createHttpServer(store, silentLogger);

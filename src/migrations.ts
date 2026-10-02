@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const LATEST_SCHEMA_VERSION = 3;
+export const LATEST_SCHEMA_VERSION = 4;
 
 const migrations = [
   `
@@ -29,6 +29,9 @@ const migrations = [
   `,
   `
     ALTER TABLE jobs ADD COLUMN lease_token TEXT;
+  `,
+  `
+    ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
   `,
 ] as const;
 
