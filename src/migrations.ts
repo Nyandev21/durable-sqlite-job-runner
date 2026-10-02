@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const LATEST_SCHEMA_VERSION = 2;
+export const LATEST_SCHEMA_VERSION = 3;
 
 const migrations = [
   `
@@ -26,6 +26,9 @@ const migrations = [
     CREATE INDEX IF NOT EXISTS jobs_failed_updated
       ON jobs(updated_at DESC, created_at DESC)
       WHERE status = 'failed';
+  `,
+  `
+    ALTER TABLE jobs ADD COLUMN lease_token TEXT;
   `,
 ] as const;
 

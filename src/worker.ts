@@ -45,8 +45,11 @@ export class Worker {
     try {
       if (handler === undefined) throw new Error(`No handler registered for job kind: ${job.kind}`);
       const result = await handler(job.payload);
-      if (!this.#store.complete(job.id, this.#options.workerId, result)) {
-        throw new Error(`Worker lost ownership of job ${job.id}`);
+      if (!this.#store.complete(job.id, this.#options.workerId, job.leaseToken, result)) {
+        this.#logger.error("job.ownership_lost", new Error("Lease was replaced"), {
+          jobId: job.id, workerId: this.#options.workerId,
+        });
+        return true;
       }
       this.#logger.info("job.succeeded", { jobId: job.id, workerId: this.#options.workerId });
     } catch (error) {
@@ -55,8 +58,8 @@ export class Worker {
         this.#options.retryMaxDelayMs,
         this.#options.retryBaseDelayMs * 2 ** (job.attempts - 1),
       );
-      this.#store.fail(job.id, this.#options.workerId, message, delay);
-      this.#logger.error("job.failed_attempt", error, {
+      const failed = this.#store.fail(job.id, this.#options.workerId, job.leaseToken, message, delay);
+      this.#logger.error(failed ? "job.failed_attempt" : "job.ownership_lost", error, {
         jobId: job.id,
         workerId: this.#options.workerId,
         retryDelayMs: delay,

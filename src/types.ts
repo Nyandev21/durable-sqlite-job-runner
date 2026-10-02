@@ -16,6 +16,11 @@ export interface Job<TPayload = unknown, TResult = unknown> {
   updatedAt: number;
 }
 
+// A claim token is private to the worker and must not appear in HTTP job responses.
+export interface ClaimedJob extends Job {
+  leaseToken: string;
+}
+
 export interface EnqueueOptions {
   maxAttempts?: number;
   availableAt?: number;

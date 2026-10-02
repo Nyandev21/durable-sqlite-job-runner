@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
 import { migrateDatabase } from "./migrations.js";
-import type { EnqueueOptions, Job, QueueStats } from "./types.js";
+import type { ClaimedJob, EnqueueOptions, Job, QueueStats } from "./types.js";
 
 interface JobRow {
   id: string;
@@ -161,7 +161,7 @@ export class JobStore {
     `).get(now, now) as unknown as QueueStats;
   }
 
-  claim(workerId: string, leaseMs: number, now = Date.now()): Job | null {
+  claim(workerId: string, leaseMs: number, now = Date.now()): ClaimedJob | null {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
       const row = this.#database.prepare(`
@@ -180,46 +180,47 @@ export class JobStore {
         return null;
       }
 
+      const leaseToken = randomUUID();
       this.#database.prepare(`
         UPDATE jobs
         SET status = 'running', attempts = attempts + 1,
-            worker_id = ?, lease_expires_at = ?, updated_at = ?
+            worker_id = ?, lease_token = ?, lease_expires_at = ?, updated_at = ?
         WHERE id = ?
-      `).run(workerId, now + leaseMs, now, row.id);
+      `).run(workerId, leaseToken, now + leaseMs, now, row.id);
       this.#database.exec("COMMIT");
-      return this.get(row.id);
+      return { ...this.get(row.id)!, leaseToken };
     } catch (error) {
       this.#database.exec("ROLLBACK");
       throw error;
     }
   }
 
-  heartbeat(id: string, workerId: string, leaseMs: number, now = Date.now()): boolean {
+  heartbeat(id: string, workerId: string, leaseToken: string, leaseMs: number, now = Date.now()): boolean {
     const result = this.#database.prepare(`
       UPDATE jobs SET lease_expires_at = ?, updated_at = ?
-      WHERE id = ? AND status = 'running' AND worker_id = ?
-    `).run(now + leaseMs, now, id, workerId);
+      WHERE id = ? AND status = 'running' AND worker_id = ? AND lease_token = ?
+    `).run(now + leaseMs, now, id, workerId, leaseToken);
     return this.#changed(result);
   }
 
-  complete(id: string, workerId: string, result: unknown, now = Date.now()): boolean {
+  complete(id: string, workerId: string, leaseToken: string, result: unknown, now = Date.now()): boolean {
     const updated = this.#database.prepare(`
       UPDATE jobs
-      SET status = 'succeeded', result = ?, worker_id = NULL,
+      SET status = 'succeeded', result = ?, worker_id = NULL, lease_token = NULL,
           lease_expires_at = NULL, updated_at = ?
-      WHERE id = ? AND status = 'running' AND worker_id = ?
-    `).run(JSON.stringify(result ?? null), now, id, workerId);
+      WHERE id = ? AND status = 'running' AND worker_id = ? AND lease_token = ?
+    `).run(JSON.stringify(result ?? null), now, id, workerId, leaseToken);
     return this.#changed(updated);
   }
 
-  fail(id: string, workerId: string, error: string, retryDelayMs: number, now = Date.now()): boolean {
+  fail(id: string, workerId: string, leaseToken: string, error: string, retryDelayMs: number, now = Date.now()): boolean {
     const updated = this.#database.prepare(`
       UPDATE jobs
       SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
           available_at = CASE WHEN attempts >= max_attempts THEN available_at ELSE ? END,
-          last_error = ?, worker_id = NULL, lease_expires_at = NULL, updated_at = ?
-      WHERE id = ? AND status = 'running' AND worker_id = ?
-    `).run(now + retryDelayMs, error, now, id, workerId);
+          last_error = ?, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ?
+      WHERE id = ? AND status = 'running' AND worker_id = ? AND lease_token = ?
+    `).run(now + retryDelayMs, error, now, id, workerId, leaseToken);
     return this.#changed(updated);
   }
 

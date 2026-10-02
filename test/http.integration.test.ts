@@ -137,8 +137,8 @@ describe("HTTP job flow", () => {
   it("exposes terminal jobs through a bounded dead-letter endpoint", async () => {
     const store = new JobStore(":memory:");
     const failed = store.enqueue("unknown", {}, { maxAttempts: 1 });
-    store.claim("worker-test", 1_000, failed.createdAt);
-    store.fail(failed.id, "worker-test", "No handler", 0, failed.createdAt + 1);
+    const claimed = store.claim("worker-test", 1_000, failed.createdAt)!;
+    store.fail(failed.id, "worker-test", claimed.leaseToken, "No handler", 0, failed.createdAt + 1);
     const server = createHttpServer(store, silentLogger);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(() => {
