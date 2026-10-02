@@ -21,6 +21,21 @@ afterEach(() => {
 });
 
 describe("JobStore", () => {
+  it("cancels queued jobs without claiming them or interrupting running work", () => {
+    const store = createStore();
+    const queued = store.enqueue("uppercase", { text: "cancel" });
+    const cancelled = store.cancelQueued(queued.id);
+    expect(cancelled).toMatchObject({ id: queued.id, status: "cancelled" });
+    expect(store.claim("worker", 1_000)).toBeNull();
+    expect(store.cancelQueued(queued.id)).toBeNull();
+
+    const running = store.enqueue("uppercase", { text: "keep running" });
+    const claim = store.claim("worker", 1_000, running.createdAt)!;
+    expect(store.cancelQueued(running.id)).toBeNull();
+    expect(store.complete(running.id, "worker", claim.leaseToken, null)).toBe(true);
+    expect(store.stats().cancelled).toBe(1);
+  });
+
   it("deduplicates matching requests by idempotency key and rejects conflicting reuse", () => {
     const store = createStore();
     const options = { idempotencyKey: "request-123", priority: 2 };
@@ -75,6 +90,7 @@ describe("JobStore", () => {
       running: 1,
       succeeded: 0,
       failed: 0,
+      cancelled: 0,
       claimable: 0,
       totalAttempts: 1,
     });

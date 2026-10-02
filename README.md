@@ -79,7 +79,8 @@ curl -s http://localhost:3000/jobs/JOB_ID
 ```
 
 `GET /jobs?status=queued&limit=50&offset=0` lists jobs newest first. The
-optional status filter accepts `queued`, `running`, `succeeded`, or `failed`;
+optional status filter accepts `queued`, `running`, `succeeded`, `failed`, or
+`cancelled`;
 `limit` is 1–100 and `offset` is 0–10000. The response contains `total` for
 the selected status and a `jobs` page. Offset pages are snapshots, not a stable
 cursor: concurrent inserts can shift subsequent pages.
@@ -123,6 +124,12 @@ the limit is validated between 1 and 100.
 `POST /jobs/:id/retry` requeues a terminal job, clears its recorded error, and
 resets its attempt budget. The endpoint returns 409 for jobs that are not failed
 and 404 for unknown IDs.
+
+`POST /jobs/:id/cancel` atomically cancels a queued job and returns the updated
+job. It returns 409 if work has started or the job is already terminal, and 404
+for unknown IDs. It deliberately does not attempt to interrupt a running
+handler. Cancelled jobs remain available for inspection and are included in
+`GET /stats` but are never claimable.
 
 ## Configuration
 

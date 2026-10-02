@@ -158,6 +158,14 @@ export class JobStore {
     return { total: total.count, jobs: rows.map(deserialize) };
   }
 
+  cancelQueued(id: string, now = Date.now()): Job | null {
+    const updated = this.#database.prepare(`
+      UPDATE jobs SET status = 'cancelled', updated_at = ?
+      WHERE id = ? AND status = 'queued'
+    `).run(now, id);
+    return this.#changed(updated) ? this.get(id) : null;
+  }
+
   listFailed(limit = 50): Job[] {
     const rows = this.#database.prepare(`
       SELECT * FROM jobs
@@ -199,6 +207,7 @@ export class JobStore {
         count(*) FILTER (WHERE status = 'running') AS running,
         count(*) FILTER (WHERE status = 'succeeded') AS succeeded,
         count(*) FILTER (WHERE status = 'failed') AS failed,
+        count(*) FILTER (WHERE status = 'cancelled') AS cancelled,
         count(*) FILTER (WHERE
           attempts < max_attempts AND (
             (status = 'queued' AND available_at <= ?)

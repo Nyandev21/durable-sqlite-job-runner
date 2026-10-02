@@ -13,6 +13,24 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("cancels only queued jobs through the HTTP API", async () => {
+    const store = new JobStore(":memory:");
+    const queued = store.enqueue("uppercase", { text: "cancel" });
+    const running = store.enqueue("uppercase", { text: "run" }, { priority: 5 });
+    store.claim("worker", 1_000, running.createdAt);
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => { server.close(); store.close(); });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/jobs`;
+
+    const cancelled = await fetch(`${base}/${queued.id}/cancel`, { method: "POST" });
+    expect(cancelled.status).toBe(200);
+    await expect(cancelled.json()).resolves.toMatchObject({ status: "cancelled" });
+    expect((await fetch(`${base}/${queued.id}/cancel`, { method: "POST" })).status).toBe(409);
+    expect((await fetch(`${base}/${running.id}/cancel`, { method: "POST" })).status).toBe(409);
+    expect((await fetch(`${base}/missing/cancel`, { method: "POST" })).status).toBe(404);
+  });
+
   it("protects job routes with an optional bearer token while leaving probes public", async () => {
     const store = new JobStore(":memory:");
     const token = "this-is-a-long-random-secret";
@@ -257,6 +275,7 @@ describe("HTTP job flow", () => {
       running: 0,
       succeeded: 0,
       failed: 0,
+      cancelled: 0,
       claimable: 1,
       totalAttempts: 0,
     });

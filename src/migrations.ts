@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const LATEST_SCHEMA_VERSION = 5;
+export const LATEST_SCHEMA_VERSION = 6;
 
 const migrations = [
   `
@@ -36,6 +36,38 @@ const migrations = [
   `
     ALTER TABLE jobs ADD COLUMN idempotency_key TEXT;
     ALTER TABLE jobs ADD COLUMN idempotency_fingerprint TEXT;
+    CREATE UNIQUE INDEX jobs_idempotency_key ON jobs(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+  `,
+  `
+    CREATE TABLE jobs_new (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL CHECK (max_attempts > 0),
+      available_at INTEGER NOT NULL,
+      lease_expires_at INTEGER,
+      worker_id TEXT,
+      result TEXT,
+      last_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      lease_token TEXT,
+      priority INTEGER NOT NULL DEFAULT 0,
+      idempotency_key TEXT,
+      idempotency_fingerprint TEXT
+    );
+    INSERT INTO jobs_new SELECT id, kind, payload, status, attempts, max_attempts,
+      available_at, lease_expires_at, worker_id, result, last_error, created_at,
+      updated_at, lease_token, priority, idempotency_key, idempotency_fingerprint
+      FROM jobs;
+    DROP TABLE jobs;
+    ALTER TABLE jobs_new RENAME TO jobs;
+    CREATE INDEX jobs_claimable ON jobs(status, available_at, lease_expires_at, created_at);
+    CREATE INDEX jobs_failed_updated ON jobs(updated_at DESC, created_at DESC)
+      WHERE status = 'failed';
     CREATE UNIQUE INDEX jobs_idempotency_key ON jobs(idempotency_key)
       WHERE idempotency_key IS NOT NULL;
   `,

@@ -18,7 +18,7 @@ const deadLetterQuery = z.object({
 });
 
 const listJobsQuery = z.object({
-  status: z.enum(["queued", "running", "succeeded", "failed"]).optional(),
+  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(10_000).default(0),
 });
@@ -134,6 +134,23 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
       }
 
       const retryMatch = /^\/jobs\/([^/]+)\/retry$/.exec(url.pathname);
+      const cancelMatch = /^\/jobs\/([^/]+)\/cancel$/.exec(url.pathname);
+      if (request.method === "POST" && cancelMatch?.[1] !== undefined) {
+        const id = decodeURIComponent(cancelMatch[1]);
+        const existing = store.get(id);
+        if (existing === null) {
+          json(response, 404, { error: "Job not found" });
+          return;
+        }
+        const cancelled = store.cancelQueued(id);
+        if (cancelled === null) {
+          json(response, 409, { error: `Only queued jobs can be cancelled; current status is ${existing.status}` });
+          return;
+        }
+        logger.info("job.cancelled", { requestId: correlationId, jobId: id });
+        json(response, 200, cancelled);
+        return;
+      }
       if (request.method === "POST" && retryMatch?.[1] !== undefined) {
         const id = decodeURIComponent(retryMatch[1]);
         const existing = store.get(id);

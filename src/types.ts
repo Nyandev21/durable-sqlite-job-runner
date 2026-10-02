@@ -1,4 +1,4 @@
-export type JobStatus = "queued" | "running" | "succeeded" | "failed";
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export interface Job<TPayload = unknown, TResult = unknown> {
   id: string;
@@ -35,6 +35,7 @@ export interface QueueStats {
   running: number;
   succeeded: number;
   failed: number;
+  cancelled: number;
   claimable: number;
   totalAttempts: number;
 }
