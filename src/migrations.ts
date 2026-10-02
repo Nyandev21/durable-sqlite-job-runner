@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const LATEST_SCHEMA_VERSION = 4;
+export const LATEST_SCHEMA_VERSION = 5;
 
 const migrations = [
   `
@@ -32,6 +32,12 @@ const migrations = [
   `,
   `
     ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+    ALTER TABLE jobs ADD COLUMN idempotency_key TEXT;
+    ALTER TABLE jobs ADD COLUMN idempotency_fingerprint TEXT;
+    CREATE UNIQUE INDEX jobs_idempotency_key ON jobs(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
   `,
 ] as const;
 

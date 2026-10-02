@@ -26,6 +26,7 @@ export interface EnqueueOptions {
   maxAttempts?: number;
   availableAt?: number;
   priority?: number;
+  idempotencyKey?: string;
 }
 
 export interface QueueStats {

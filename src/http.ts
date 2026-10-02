@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import { consoleLogger, type Logger } from "./logger.js";
-import type { JobStore } from "./store.js";
+import { IdempotencyConflictError, type JobStore } from "./store.js";
 
 const enqueueRequest = z.object({
   kind: z.string().min(1),
@@ -10,6 +10,7 @@ const enqueueRequest = z.object({
   maxAttempts: z.number().int().min(1).max(20).optional(),
   runAt: z.iso.datetime({ offset: true }).optional(),
   priority: z.number().int().min(-10).max(10).default(0),
+  idempotencyKey: z.string().min(1).max(128).optional(),
 });
 
 const deadLetterQuery = z.object({
@@ -100,6 +101,7 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
           priority: input.priority,
           ...(input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts }),
           ...(input.runAt === undefined ? {} : { availableAt: Date.parse(input.runAt) }),
+          ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
         });
         logger.info("job.enqueued", { requestId: correlationId, jobId: job.id, kind: job.kind });
         json(response, 202, job);
@@ -142,6 +144,10 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
     } catch (error) {
       if (error instanceof z.ZodError) {
         json(response, 400, { error: "Invalid request", issues: error.issues });
+        return;
+      }
+      if (error instanceof IdempotencyConflictError) {
+        json(response, 409, { error: error.message });
         return;
       }
       logger.error("http.request.rejected", error, { requestId: correlationId });

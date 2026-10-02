@@ -10,6 +10,7 @@ interface JobRow {
   kind: string;
   payload: string;
   priority: number;
+  idempotency_fingerprint: string | null;
   status: Job["status"];
   attempts: number;
   max_attempts: number;
@@ -41,6 +42,12 @@ function deserialize(row: JobRow): Job {
   };
 }
 
+export class IdempotencyConflictError extends Error {
+  constructor() {
+    super("Idempotency key was already used with a different request");
+  }
+}
+
 export class JobStore {
   readonly #database: DatabaseSync;
 
@@ -68,44 +75,69 @@ export class JobStore {
     if (serializedPayload === undefined) {
       throw new TypeError("Job payload must be JSON-serializable");
     }
-    const job: Job = {
-      id: randomUUID(),
-      kind,
-      payload,
-      priority: options.priority ?? 0,
-      status: "queued",
-      attempts: 0,
-      maxAttempts: options.maxAttempts ?? 3,
-      availableAt: options.availableAt ?? now,
-      leaseExpiresAt: null,
-      workerId: null,
-      result: null,
-      lastError: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.#database.prepare(`
-      INSERT INTO jobs (
-        id, kind, payload, priority, status, attempts, max_attempts, available_at,
-        lease_expires_at, worker_id, result, last_error, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      job.id,
-      job.kind,
-      serializedPayload,
-      job.priority,
-      job.status,
-      job.attempts,
-      job.maxAttempts,
-      job.availableAt,
-      null,
-      null,
-      null,
-      null,
-      job.createdAt,
-      job.updatedAt,
-    );
-    return job;
+    const fingerprint = JSON.stringify({
+      kind, payload, maxAttempts: options.maxAttempts ?? 3,
+      availableAt: options.availableAt ?? null, priority: options.priority ?? 0,
+    });
+    const transactional = options.idempotencyKey !== undefined;
+    if (transactional) this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      if (options.idempotencyKey !== undefined) {
+        const existing = this.#database.prepare("SELECT * FROM jobs WHERE idempotency_key = ?")
+          .get(options.idempotencyKey) as JobRow | undefined;
+        if (existing !== undefined) {
+          if (existing.idempotency_fingerprint !== fingerprint) throw new IdempotencyConflictError();
+          const job = deserialize(existing);
+          this.#database.exec("COMMIT");
+          return job;
+        }
+      }
+      const job: Job = {
+        id: randomUUID(),
+        kind,
+        payload,
+        priority: options.priority ?? 0,
+        status: "queued",
+        attempts: 0,
+        maxAttempts: options.maxAttempts ?? 3,
+        availableAt: options.availableAt ?? now,
+        leaseExpiresAt: null,
+        workerId: null,
+        result: null,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.#database.prepare(`
+        INSERT INTO jobs (
+          id, kind, payload, priority, status, attempts, max_attempts, available_at,
+          lease_expires_at, worker_id, result, last_error, created_at, updated_at,
+          idempotency_key, idempotency_fingerprint
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        job.id,
+        job.kind,
+        serializedPayload,
+        job.priority,
+        job.status,
+        job.attempts,
+        job.maxAttempts,
+        job.availableAt,
+        null,
+        null,
+        null,
+        null,
+        job.createdAt,
+        job.updatedAt,
+        options.idempotencyKey ?? null,
+        options.idempotencyKey === undefined ? null : fingerprint,
+      );
+      if (transactional) this.#database.exec("COMMIT");
+      return job;
+    } catch (error) {
+      if (transactional) this.#database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   get(id: string): Job | null {

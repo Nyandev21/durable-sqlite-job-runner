@@ -21,6 +21,18 @@ afterEach(() => {
 });
 
 describe("JobStore", () => {
+  it("deduplicates matching requests by idempotency key and rejects conflicting reuse", () => {
+    const store = createStore();
+    const options = { idempotencyKey: "request-123", priority: 2 };
+    const first = store.enqueue("uppercase", { text: "same" }, options);
+    const repeated = store.enqueue("uppercase", { text: "same" }, options);
+    expect(repeated.id).toBe(first.id);
+    expect(store.list({ limit: 10, offset: 0 }).total).toBe(1);
+    expect(() => store.enqueue("uppercase", { text: "different" }, options))
+      .toThrow("different request");
+    expect(store.enqueue("uppercase", { text: "without key" }).id).not.toBe(first.id);
+  });
+
   it("lists a bounded, filtered page with a separate total", () => {
     const store = createStore();
     const first = store.enqueue("uppercase", { order: 1 });
