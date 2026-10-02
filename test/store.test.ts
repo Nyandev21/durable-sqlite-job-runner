@@ -21,6 +21,21 @@ afterEach(() => {
 });
 
 describe("JobStore", () => {
+  it("records each claim and its outcome across retries", () => {
+    const store = createStore();
+    const job = store.enqueue("uppercase", { text: "retry" }, { maxAttempts: 2 });
+    const first = store.claim("worker-a", 100, job.createdAt)!;
+    expect(store.fail(job.id, "worker-a", first.leaseToken, "transient", 10, job.createdAt)).toBe(true);
+    const second = store.claim("worker-b", 100, job.createdAt + 10)!;
+    expect(store.complete(job.id, "worker-b", second.leaseToken, { ok: true }, job.createdAt + 11)).toBe(true);
+
+    expect(store.listAttempts(job.id)).toMatchObject([
+      { attemptNumber: 2, workerId: "worker-b", outcome: "succeeded", error: null },
+      { attemptNumber: 1, workerId: "worker-a", outcome: "failed", error: "transient" },
+    ]);
+    expect(store.listAttempts(job.id, 1)).toHaveLength(1);
+  });
+
   it("cancels queued jobs without claiming them or interrupting running work", () => {
     const store = createStore();
     const queued = store.enqueue("uppercase", { text: "cancel" });
@@ -126,6 +141,10 @@ describe("JobStore", () => {
     const reclaimed = store.claim("worker-b", 100, created.createdAt + 101);
     expect(reclaimed).toMatchObject({ id: created.id, workerId: "worker-b", attempts: 2 });
     expect(store.complete(created.id, "worker-a", original.leaseToken, null)).toBe(false);
+    expect(store.listAttempts(created.id)).toMatchObject([
+      { outcome: "running", workerId: "worker-b" },
+      { outcome: "expired", workerId: "worker-a" },
+    ]);
   });
 
   it("fences a stale claim even when the worker ID is reused", () => {

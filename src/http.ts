@@ -127,6 +127,17 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
       }
 
       const match = /^\/jobs\/([^/]+)$/.exec(url.pathname);
+      const attemptsMatch = /^\/jobs\/([^/]+)\/attempts$/.exec(url.pathname);
+      if (request.method === "GET" && attemptsMatch?.[1] !== undefined) {
+        const id = decodeURIComponent(attemptsMatch[1]);
+        if (store.get(id) === null) {
+          json(response, 404, { error: "Job not found" });
+          return;
+        }
+        const query = deadLetterQuery.parse(Object.fromEntries(url.searchParams));
+        json(response, 200, { attempts: store.listAttempts(id, query.limit) });
+        return;
+      }
       if (request.method === "GET" && match?.[1] !== undefined) {
         const job = store.get(decodeURIComponent(match[1]));
         json(response, job === null ? 404 : 200, job ?? { error: "Job not found" });

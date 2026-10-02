@@ -131,6 +131,12 @@ for unknown IDs. It deliberately does not attempt to interrupt a running
 handler. Cancelled jobs remain available for inspection and are included in
 `GET /stats` but are never claimable.
 
+`GET /jobs/:id/attempts?limit=50` returns the newest execution attempts (up to
+100) with their worker, start/finish time, outcome, and error. An expired lease
+is marked `expired` when a replacement worker reclaims the job. Attempts from
+before the attempt-history migration are not backfilled; the current job record
+still retains its aggregate attempt count and last error.
+
 ## Configuration
 
 Copy `.env.example` values into your runtime environment as needed:
