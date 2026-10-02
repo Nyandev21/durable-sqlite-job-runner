@@ -8,6 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "backup": "node scripts/backup.mjs",
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/index.ts",
     "lint": "eslint .",

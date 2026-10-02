@@ -56,6 +56,18 @@ production monitoring can scrape or adapt this endpoint.
 See [the recovery runbook](docs/recovery.md) for crash recovery, dead-letter
 handling, SQLite backup constraints, and the multi-process contention check.
 
+For an online, consistent SQLite backup while the service is running, create
+the destination directory and run:
+
+```bash
+npm run backup -- ./data/jobs.db ./backups/jobs-2026-10-02.db
+```
+
+The command uses SQLite's backup API (including uncheckpointed WAL changes),
+requires an existing source, and refuses to replace an existing destination.
+Keep backup copies outside the live data volume and periodically test recovery
+by opening a copy of the backup with the service stopped.
+
 Enqueue and inspect a job:
 
 ```bash
