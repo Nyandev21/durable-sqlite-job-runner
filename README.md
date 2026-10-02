@@ -70,6 +70,13 @@ requires an existing source, and refuses to replace an existing destination.
 Keep backup copies outside the live data volume and periodically test recovery
 by opening a copy of the backup with the service stopped.
 
+To check a database or backup without modifying it, run
+`npm run check-db -- ./backups/jobs-2026-10-02.db`. This runs SQLite's full
+integrity check and foreign-key check, exits nonzero on failure, and refuses to
+create a missing database file. Run it on backup copies as part of restore
+practice; a passing integrity check does not replace an application-level
+restore test.
+
 Enqueue and inspect a job:
 
 ```bash

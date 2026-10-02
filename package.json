@@ -9,6 +9,7 @@
   },
   "scripts": {
     "backup": "node scripts/backup.mjs",
+    "check-db": "node scripts/check-db.mjs",
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/index.ts",
     "lint": "eslint .",
