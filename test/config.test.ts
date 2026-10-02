@@ -54,4 +54,10 @@ describe("loadConfig", () => {
       RETRY_MAX_DELAY_MS: "500",
     })).toThrow("RETRY_MAX_DELAY_MS: must be greater than or equal to RETRY_BASE_DELAY_MS");
   });
+
+  it("requires a sufficiently long optional API token", () => {
+    expect(() => loadConfig({ API_TOKEN: "short" })).toThrow("API_TOKEN");
+    expect(loadConfig({ API_TOKEN: "this-is-a-long-random-secret" }).API_TOKEN)
+      .toBe("this-is-a-long-random-secret");
+  });
 });

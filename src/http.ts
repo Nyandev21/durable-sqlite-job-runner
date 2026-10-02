@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import { consoleLogger, type Logger } from "./logger.js";
@@ -57,7 +57,8 @@ function requestId(request: IncomingMessage): string {
     : randomUUID();
 }
 
-export function createHttpServer(store: JobStore, logger: Logger = consoleLogger): Server {
+export function createHttpServer(store: JobStore, logger: Logger = consoleLogger, apiToken?: string): Server {
+  const expectedTokenHash = apiToken === undefined ? null : createHash("sha256").update(apiToken).digest();
   return createServer(async (request, response) => {
     const correlationId = requestId(request);
     const startedAt = performance.now();
@@ -73,6 +74,16 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
     });
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
+      if (expectedTokenHash !== null && url.pathname !== "/health" && url.pathname !== "/ready") {
+        const authorization = request.headers.authorization;
+        const candidate = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+        const candidateHash = createHash("sha256").update(candidate).digest();
+        if (!timingSafeEqual(candidateHash, expectedTokenHash)) {
+          response.setHeader("www-authenticate", "Bearer");
+          json(response, 401, { error: "Unauthorized" });
+          return;
+        }
+      }
       if (request.method === "GET" && url.pathname === "/health") {
         json(response, 200, { status: "ok" });
         return;

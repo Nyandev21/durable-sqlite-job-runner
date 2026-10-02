@@ -4,8 +4,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DB_PATH: /app/data/jobs.db
-      WORKER_ID: compose-worker
+      - DB_PATH=/app/data/jobs.db
+      - WORKER_ID=compose-worker
+      - API_TOKEN
     volumes:
       - job-data:/app/data
 
