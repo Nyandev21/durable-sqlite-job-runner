@@ -42,7 +42,7 @@ describe("database migrations", () => {
     legacy.close();
 
     const store = new JobStore(path);
-    expect(store.get("legacy-job")).toMatchObject({ id: "legacy-job", status: "queued" });
+    expect(store.get("legacy-job")).toMatchObject({ id: "legacy-job", status: "queued", priority: 0 });
     store.close();
 
     const reopened = new DatabaseSync(path);

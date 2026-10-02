@@ -9,6 +9,7 @@ const enqueueRequest = z.object({
   payload: z.unknown(),
   maxAttempts: z.number().int().min(1).max(20).optional(),
   runAt: z.iso.datetime({ offset: true }).optional(),
+  priority: z.number().int().min(-10).max(10).default(0),
 });
 
 const deadLetterQuery = z.object({
@@ -84,6 +85,7 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
       if (request.method === "POST" && url.pathname === "/jobs") {
         const input = enqueueRequest.parse(await readJson(request));
         const job = store.enqueue(input.kind, input.payload, {
+          priority: input.priority,
           ...(input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts }),
           ...(input.runAt === undefined ? {} : { availableAt: Date.parse(input.runAt) }),
         });

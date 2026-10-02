@@ -9,6 +9,7 @@ interface JobRow {
   id: string;
   kind: string;
   payload: string;
+  priority: number;
   status: Job["status"];
   attempts: number;
   max_attempts: number;
@@ -26,6 +27,7 @@ function deserialize(row: JobRow): Job {
     id: row.id,
     kind: row.kind,
     payload: JSON.parse(row.payload) as unknown,
+    priority: row.priority,
     status: row.status,
     attempts: row.attempts,
     maxAttempts: row.max_attempts,
@@ -70,6 +72,7 @@ export class JobStore {
       id: randomUUID(),
       kind,
       payload,
+      priority: options.priority ?? 0,
       status: "queued",
       attempts: 0,
       maxAttempts: options.maxAttempts ?? 3,
@@ -83,13 +86,14 @@ export class JobStore {
     };
     this.#database.prepare(`
       INSERT INTO jobs (
-        id, kind, payload, status, attempts, max_attempts, available_at,
+        id, kind, payload, priority, status, attempts, max_attempts, available_at,
         lease_expires_at, worker_id, result, last_error, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       job.id,
       job.kind,
       serializedPayload,
+      job.priority,
       job.status,
       job.attempts,
       job.maxAttempts,
@@ -171,7 +175,7 @@ export class JobStore {
             (status = 'queued' AND available_at <= ?)
             OR (status = 'running' AND lease_expires_at <= ?)
           )
-        ORDER BY available_at ASC, created_at ASC
+        ORDER BY priority DESC, available_at ASC, created_at ASC
         LIMIT 1
       `).get(now, now) as JobRow | undefined;
 

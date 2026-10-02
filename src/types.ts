@@ -4,6 +4,7 @@ export interface Job<TPayload = unknown, TResult = unknown> {
   id: string;
   kind: string;
   payload: TPayload;
+  priority: number;
   status: JobStatus;
   attempts: number;
   maxAttempts: number;
@@ -24,6 +25,7 @@ export interface ClaimedJob extends Job {
 export interface EnqueueOptions {
   maxAttempts?: number;
   availableAt?: number;
+  priority?: number;
 }
 
 export interface QueueStats {

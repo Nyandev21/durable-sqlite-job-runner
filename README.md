@@ -76,6 +76,12 @@ future `runAt` remain queued until that time; omitted or past times are eligible
 immediately. Scheduling is best-effort: workers poll, so execution may start
 after the requested time rather than exactly on it.
 
+An optional integer `priority` from -10 through 10 (default 0) makes ready
+jobs with higher values claim first. Among jobs with equal priority, earlier
+availability and creation times win. A high-priority scheduled job does not
+block already-ready work. Sustained high-priority traffic can delay lower
+priority jobs; choose priorities sparingly.
+
 Operational probes are available at `GET /health` for process liveness and
 `GET /ready` for SQLite schema/connection readiness. Readiness returns HTTP 503
 when the queue database cannot be queried.
