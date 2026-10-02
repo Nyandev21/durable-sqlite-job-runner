@@ -12,8 +12,10 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY scripts/healthcheck.mjs ./healthcheck.mjs
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 EXPOSE 3000
 VOLUME ["/app/data"]
 CMD ["node", "dist/index.js"]
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 CMD ["node", "/app/healthcheck.mjs"]
