@@ -41,3 +41,12 @@ export interface QueueStats {
 }
 
 export type JobHandler = (payload: unknown) => unknown | Promise<unknown>;
+
+export interface JobAttempt {
+  attemptNumber: number;
+  workerId: string;
+  startedAt: number;
+  finishedAt: number | null;
+  outcome: "running" | "succeeded" | "failed" | "expired";
+  error: string | null;
+}

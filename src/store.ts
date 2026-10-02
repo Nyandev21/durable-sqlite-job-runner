@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
 import { migrateDatabase } from "./migrations.js";
-import type { ClaimedJob, EnqueueOptions, Job, JobStatus, QueueStats } from "./types.js";
+import type { ClaimedJob, EnqueueOptions, Job, JobAttempt, JobStatus, QueueStats } from "./types.js";
 
 interface JobRow {
   id: string;
@@ -16,6 +16,7 @@ interface JobRow {
   max_attempts: number;
   available_at: number;
   lease_expires_at: number | null;
+  lease_token: string | null;
   worker_id: string | null;
   result: string | null;
   last_error: string | null;
@@ -166,6 +167,21 @@ export class JobStore {
     return this.#changed(updated) ? this.get(id) : null;
   }
 
+  listAttempts(id: string, limit = 50): JobAttempt[] {
+    const rows = this.#database.prepare(`
+      SELECT attempt_number, worker_id, started_at, finished_at, outcome, error
+      FROM job_attempts WHERE job_id = ? ORDER BY id DESC LIMIT ?
+    `).all(id, limit) as Array<{
+      attempt_number: number; worker_id: string; started_at: number;
+      finished_at: number | null; outcome: JobAttempt["outcome"]; error: string | null;
+    }>;
+    return rows.map((row) => ({
+      attemptNumber: row.attempt_number, workerId: row.worker_id,
+      startedAt: row.started_at, finishedAt: row.finished_at,
+      outcome: row.outcome, error: row.error,
+    }));
+  }
+
   listFailed(limit = 50): Job[] {
     const rows = this.#database.prepare(`
       SELECT * FROM jobs
@@ -239,12 +255,22 @@ export class JobStore {
       }
 
       const leaseToken = randomUUID();
+      if (row.status === "running") {
+        this.#database.prepare(`
+          UPDATE job_attempts SET outcome = 'expired', finished_at = ?
+          WHERE job_id = ? AND lease_token = ? AND outcome = 'running'
+        `).run(now, row.id, row.lease_token);
+      }
       this.#database.prepare(`
         UPDATE jobs
         SET status = 'running', attempts = attempts + 1,
             worker_id = ?, lease_token = ?, lease_expires_at = ?, updated_at = ?
         WHERE id = ?
       `).run(workerId, leaseToken, now + leaseMs, now, row.id);
+      this.#database.prepare(`
+        INSERT INTO job_attempts (job_id, attempt_number, worker_id, lease_token, started_at, outcome)
+        VALUES (?, ?, ?, ?, ?, 'running')
+      `).run(row.id, row.attempts + 1, workerId, leaseToken, now);
       this.#database.exec("COMMIT");
       return { ...this.get(row.id)!, leaseToken };
     } catch (error) {
@@ -262,24 +288,51 @@ export class JobStore {
   }
 
   complete(id: string, workerId: string, leaseToken: string, result: unknown, now = Date.now()): boolean {
-    const updated = this.#database.prepare(`
+    const serializedResult = JSON.stringify(result ?? null);
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const updated = this.#database.prepare(`
       UPDATE jobs
       SET status = 'succeeded', result = ?, worker_id = NULL, lease_token = NULL,
           lease_expires_at = NULL, updated_at = ?
       WHERE id = ? AND status = 'running' AND worker_id = ? AND lease_token = ?
-    `).run(JSON.stringify(result ?? null), now, id, workerId, leaseToken);
-    return this.#changed(updated);
+      `).run(serializedResult, now, id, workerId, leaseToken);
+      if (this.#changed(updated)) {
+        this.#database.prepare(`
+          UPDATE job_attempts SET outcome = 'succeeded', finished_at = ?
+          WHERE job_id = ? AND lease_token = ? AND outcome = 'running'
+        `).run(now, id, leaseToken);
+      }
+      this.#database.exec("COMMIT");
+      return this.#changed(updated);
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   fail(id: string, workerId: string, leaseToken: string, error: string, retryDelayMs: number, now = Date.now()): boolean {
-    const updated = this.#database.prepare(`
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const updated = this.#database.prepare(`
       UPDATE jobs
       SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
           available_at = CASE WHEN attempts >= max_attempts THEN available_at ELSE ? END,
           last_error = ?, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ?
       WHERE id = ? AND status = 'running' AND worker_id = ? AND lease_token = ?
-    `).run(now + retryDelayMs, error, now, id, workerId, leaseToken);
-    return this.#changed(updated);
+      `).run(now + retryDelayMs, error, now, id, workerId, leaseToken);
+      if (this.#changed(updated)) {
+        this.#database.prepare(`
+          UPDATE job_attempts SET outcome = 'failed', finished_at = ?, error = ?
+          WHERE job_id = ? AND lease_token = ? AND outcome = 'running'
+        `).run(now, error, id, leaseToken);
+      }
+      this.#database.exec("COMMIT");
+      return this.#changed(updated);
+    } catch (caught) {
+      this.#database.exec("ROLLBACK");
+      throw caught;
+    }
   }
 
   close(): void {

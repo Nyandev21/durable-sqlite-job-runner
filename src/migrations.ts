@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const LATEST_SCHEMA_VERSION = 6;
+export const LATEST_SCHEMA_VERSION = 7;
 
 const migrations = [
   `
@@ -70,6 +70,20 @@ const migrations = [
       WHERE status = 'failed';
     CREATE UNIQUE INDEX jobs_idempotency_key ON jobs(idempotency_key)
       WHERE idempotency_key IS NOT NULL;
+  `,
+  `
+    CREATE TABLE job_attempts (
+      id INTEGER PRIMARY KEY,
+      job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      attempt_number INTEGER NOT NULL,
+      worker_id TEXT NOT NULL,
+      lease_token TEXT NOT NULL UNIQUE,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      outcome TEXT NOT NULL CHECK (outcome IN ('running', 'succeeded', 'failed', 'expired')),
+      error TEXT
+    );
+    CREATE INDEX job_attempts_by_job ON job_attempts(job_id, id DESC);
   `,
 ] as const;
 

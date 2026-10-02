@@ -13,6 +13,25 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("exposes a bounded attempt history for an existing job", async () => {
+    const store = new JobStore(":memory:");
+    const job = store.enqueue("uppercase", { text: "history" });
+    const claim = store.claim("worker", 1_000, job.createdAt)!;
+    store.fail(job.id, "worker", claim.leaseToken, "temporary", 10, job.createdAt);
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => { server.close(); store.close(); });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/jobs`;
+
+    const response = await fetch(`${base}/${job.id}/attempts?limit=1`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ attempts: [
+      { attemptNumber: 1, outcome: "failed", error: "temporary" },
+    ] });
+    expect((await fetch(`${base}/${job.id}/attempts?limit=101`)).status).toBe(400);
+    expect((await fetch(`${base}/missing/attempts`)).status).toBe(404);
+  });
+
   it("cancels only queued jobs through the HTTP API", async () => {
     const store = new JobStore(":memory:");
     const queued = store.enqueue("uppercase", { text: "cancel" });
