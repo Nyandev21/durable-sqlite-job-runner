@@ -238,6 +238,20 @@ export class JobStore {
   claim(workerId: string, leaseMs: number, now = Date.now()): ClaimedJob | null {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
+      // Exhausted leases cannot be reclaimed; move them to the dead-letter set
+      // so a crash on the final attempt cannot leave a job running forever.
+      this.#database.prepare(`
+        UPDATE job_attempts SET outcome = 'expired', finished_at = ?
+        WHERE outcome = 'running' AND lease_token IN (
+          SELECT lease_token FROM jobs
+          WHERE status = 'running' AND lease_expires_at <= ? AND attempts >= max_attempts
+        )
+      `).run(now, now);
+      this.#database.prepare(`
+        UPDATE jobs SET status = 'failed', worker_id = NULL, lease_token = NULL,
+          lease_expires_at = NULL, last_error = 'Lease expired after final attempt', updated_at = ?
+        WHERE status = 'running' AND lease_expires_at <= ? AND attempts >= max_attempts
+      `).run(now, now);
       const row = this.#database.prepare(`
         SELECT * FROM jobs
         WHERE attempts < max_attempts

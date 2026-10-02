@@ -21,6 +21,24 @@ afterEach(() => {
 });
 
 describe("JobStore", () => {
+  it("dead-letters an expired final attempt instead of leaving it running", () => {
+    const store = createStore();
+    const created = store.enqueue("uppercase", { text: "crash" }, { maxAttempts: 1 });
+    const claim = store.claim("crashed-worker", 100, created.createdAt)!;
+    expect(store.claim("replacement", 100, created.createdAt + 99)).toBeNull();
+    expect(store.claim("replacement", 100, created.createdAt + 100)).toBeNull();
+
+    expect(store.get(created.id)).toMatchObject({
+      status: "failed", workerId: null, leaseExpiresAt: null,
+      lastError: "Lease expired after final attempt",
+    });
+    expect(store.listFailed().map((job) => job.id)).toContain(created.id);
+    expect(store.listAttempts(created.id)).toMatchObject([{
+      outcome: "expired", workerId: "crashed-worker", finishedAt: created.createdAt + 100,
+    }]);
+    expect(store.complete(created.id, "crashed-worker", claim.leaseToken, null)).toBe(false);
+  });
+
   it("records each claim and its outcome across retries", () => {
     const store = createStore();
     const job = store.enqueue("uppercase", { text: "retry" }, { maxAttempts: 2 });
