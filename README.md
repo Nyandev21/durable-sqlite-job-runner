@@ -88,6 +88,14 @@ availability and creation times win. A high-priority scheduled job does not
 block already-ready work. Sustained high-priority traffic can delay lower
 priority jobs; choose priorities sparingly.
 
+For clients that may retry an enqueue after a timeout, send an optional
+`idempotencyKey` (1–128 characters) in the JSON body. Repeating the same key
+and request returns the original job ID instead of creating another job.
+Reusing a key with a different kind, payload, attempt budget, schedule, or
+priority returns HTTP 409. Keys remain reserved for the lifetime of the job;
+the request fingerprint uses JSON field order, so retry with the same serialized
+payload shape.
+
 Operational probes are available at `GET /health` for process liveness and
 `GET /ready` for SQLite schema/connection readiness. Readiness returns HTTP 503
 when the queue database cannot be queried.

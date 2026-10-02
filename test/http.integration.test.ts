@@ -13,6 +13,26 @@ afterEach(() => {
 });
 
 describe("HTTP job flow", () => {
+  it("returns the original job for a repeated idempotent enqueue", async () => {
+    const store = new JobStore(":memory:");
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => { server.close(); store.close(); });
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/jobs`;
+    const post = (text: string) => fetch(url, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "uppercase", payload: { text }, idempotencyKey: "client-request-1" }),
+    });
+
+    const first = await post("same");
+    const repeated = await post("same");
+    expect(first.status).toBe(202);
+    expect(repeated.status).toBe(202);
+    expect((await first.json() as { id: string }).id).toBe((await repeated.json() as { id: string }).id);
+    expect((await post("different")).status).toBe(409);
+    expect(store.list({ limit: 10, offset: 0 }).total).toBe(1);
+  });
+
   it("lists filtered job pages and validates pagination parameters", async () => {
     const store = new JobStore(":memory:");
     store.enqueue("uppercase", { order: 1 });
