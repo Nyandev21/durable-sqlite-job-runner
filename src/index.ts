@@ -3,6 +3,7 @@ import { handlers } from "./handlers.js";
 import { createHttpServer } from "./http.js";
 import { JobStore } from "./store.js";
 import { Worker } from "./worker.js";
+import { drainForShutdown } from "./shutdown.js";
 
 const config = loadConfig();
 const store = new JobStore(config.DB_PATH);
@@ -26,10 +27,7 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => error === undefined ? resolve() : reject(error));
-  });
-  await worker.stop();
+  await drainForShutdown(server, worker);
   store.close();
   process.exitCode = 0;
 }

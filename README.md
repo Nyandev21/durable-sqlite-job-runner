@@ -27,9 +27,11 @@ whose handlers are safe to run more than once.
 - After `maxAttempts`, the job is retained with status `failed` for inspection.
 - An expired lease on the final allowed attempt is moved to `failed` by the next
   claim poll and remains available in the dead-letter endpoint.
-- On shutdown, the HTTP listener closes first, the worker stops claiming jobs,
-  and any active handler is allowed to persist its final state before SQLite is
-  closed.
+- On shutdown, the worker stops claiming jobs immediately while the HTTP
+  listener stops accepting new connections. Existing HTTP requests and the
+  active handler drain before SQLite is closed. An unfinished request or handler
+  can delay shutdown; configure a deployment grace period long enough for normal
+  work, and rely on lease recovery if the process is eventually terminated.
 
 This is intentionally not a distributed queue. SQLite database files must remain
 on local storage; multi-host workloads should use a broker or database designed
