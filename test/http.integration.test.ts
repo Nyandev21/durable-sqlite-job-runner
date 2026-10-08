@@ -1,5 +1,5 @@
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { handlers } from "../src/handlers.js";
 import { createHttpServer } from "../src/http.js";
 import { silentLogger, type LogContext, type Logger } from "../src/logger.js";
@@ -273,6 +273,28 @@ describe("HTTP job flow", () => {
     });
     expect((await fetch(`http://127.0.0.1:${port}/jobs/${failed.id}/retry`, { method: "POST" })).status).toBe(409);
     expect((await fetch(`http://127.0.0.1:${port}/jobs/missing/retry`, { method: "POST" })).status).toBe(404);
+  });
+
+  it("reports a conflict when a concurrent retry already requeued the job", async () => {
+    const store = new JobStore(":memory:");
+    const failed = store.enqueue("uppercase", { text: "retry race" }, { maxAttempts: 1 });
+    const claim = store.claim("worker", 1_000, failed.createdAt)!;
+    store.fail(failed.id, "worker", claim.leaseToken, "temporary failure", 0, failed.createdAt);
+    const requeue = store.requeueFailed.bind(store);
+    vi.spyOn(store, "requeueFailed").mockImplementation((id) => {
+      requeue(id);
+      return null;
+    });
+    const server = createHttpServer(store, silentLogger);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => { server.close(); store.close(); });
+    const port = (server.address() as AddressInfo).port;
+
+    const response = await fetch(`http://127.0.0.1:${port}/jobs/${failed.id}/retry`, { method: "POST" });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Only failed jobs can be retried; current status is queued",
+    });
   });
 
   it("exposes an operational queue snapshot", async () => {
