@@ -174,6 +174,15 @@ export function createHttpServer(store: JobStore, logger: Logger = consoleLogger
           return;
         }
         const job = store.requeueFailed(id);
+        if (job === null) {
+          const current = store.get(id);
+          if (current === null) {
+            json(response, 404, { error: "Job not found" });
+            return;
+          }
+          json(response, 409, { error: `Only failed jobs can be retried; current status is ${current.status}` });
+          return;
+        }
         logger.info("job.requeued", { requestId: correlationId, jobId: id });
         json(response, 202, job);
         return;
